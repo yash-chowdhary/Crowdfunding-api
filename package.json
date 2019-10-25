@@ -1,0 +1,24 @@
+{
+  "name": "Crowdfunding-api",
+  "version": "1.0.0",
+  "description": "Backend server for Crowdfunding",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yash-chowdhary/Crowdfunding-api.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yash-chowdhary/Crowdfunding-api/issues"
+  },
+  "homepage": "https://github.com/yash-chowdhary/Crowdfunding-api#readme",
+  "dependencies": {
+    "express": "^4.17.1",
+    "pg": "^7.12.1"
+  }
+}
