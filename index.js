@@ -27,6 +27,8 @@ app.get('/categories', db.getCategories)
 app.get('/user', db.getUserByEmail)
 app.get('/users', db.getUsers)
 app.get('/projects/:username/:orgName/:teamName/:projName', db.getProjectDetails)
+app.get('/test', db.testEndpoint);
+app.post('/fund', db.fundProject)
 app.post('/signup', db.signup)
 app.post('/start', db.startProject)
 app.post('/login', db.login)

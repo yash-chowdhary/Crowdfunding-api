@@ -4,7 +4,8 @@
   "description": "Backend server for Crowdfunding",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon index.js"
   },
   "repository": {
     "type": "git",
@@ -21,6 +22,8 @@
     "bcryptjs": "^2.4.3",
     "express": "^4.17.1",
     "express-jwt": "^5.3.1",
+    "moment": "^2.24.0",
+    "nodemon": "^1.19.4",
     "pg": "^7.12.1"
   }
 }
