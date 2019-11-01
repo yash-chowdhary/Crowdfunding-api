@@ -126,17 +126,114 @@ const getUserByEmail = (request, response) => {
         return client.query('SELECT * FROM users WHERE email = $1', [email], (err, result) => {
             if (err) {
                 response.status(404).json("User not found")
+            } else {
+                response.status(200).json(result.rows)
             }
-            response.status(200).json(result.rows)
         })
     })
-
 }
+
+const getUserByUsername = (request, response) => {
+    // return user details, projects created, projects backed, and projects followed
+    const username = (request.params.username);
+    console.log("Getting details for user with username: ", username)
+    pool.then(client => {
+        return client.query('SELECT * FROM users WHERE username = $1', [username], (err, result) => {
+            if (err) {
+                response.status(404).json("User not found")
+            } else {
+                var data = result.rows[0]
+                console.log(data);
+                const selectCreatedProjQuery = 'SELECT * FROM users NATURAL JOIN projects WHERE users.username = $1'
+                client.query(selectCreatedProjQuery, [username],
+                    (err, result) => {
+                        if (err) {
+                            response.status(500).json("Oops, something went wrong on our side! Please try again.")
+                        } else {
+                            // get the projects that the user has backed
+                            let created = []
+                            result.rows.forEach((proj, index) => {
+                                let createdProjData = {
+                                    creator: proj.username,
+                                    orgname: proj.orgname,
+                                    teamname: proj.teamname,
+                                    projname: proj.projname
+                                }
+                                created.push(createdProjData)
+                            })
+                            console.log(data)
+                            data.created = created
+                            let selectBackedProjQuery = 'SELECT * FROM users JOIN funds ON users.username = funds.backer WHERE users.username = $1'
+                            client.query(selectBackedProjQuery, [username],
+                                (err, result) => {
+                                    if (err) {
+                                        response.status(500).json("Oops, something went wrong on our side! Please try again.")
+                                    } else {
+                                        // get the projects that the user is following
+                                        let backed = []
+                                        result.rows.forEach((proj, index) => {
+                                            let backedProjData = {
+                                                creator: proj.creator,
+                                                orgname: proj.orgname,
+                                                teamname: proj.teamname,
+                                                projname: proj.projname,
+                                                amount: proj.amount
+                                            }
+                                            backed.push(backedProjData)
+                                        })
+                                        data.backed = backed
+                                        let selectFollowProjQuery = 'SELECT * FROM users JOIN follows ON users.username = follows.follower WHERE users.username = $1'
+                                        client.query(selectFollowProjQuery, [username],
+                                            (err, result) => {
+                                                if (err) {
+                                                    response.status(500).json("Oops, something went wrong on our side! Please try again.")
+                                                } else {
+                                                    let followed = []
+                                                    result.rows.forEach((proj, index) => {
+                                                        let followedProjData = {
+                                                            creator: proj.creator,
+                                                            orgname: proj.orgname,
+                                                            teamname: proj.teamname,
+                                                            projname: proj.projname,
+                                                        }
+                                                        followed.push(followedProjData)
+                                                    })
+                                                    data.followed = followed
+                                                    response.status(200).json(data)
+                                                }
+                                            })
+                                    }
+                                })
+                        }
+                    })
+
+            }
+        })
+    })
+}
+
+const followProject = (request, response) => {
+    const { follower, creator, orgname, teamname, projname } = request.body;
+    console.log(`${follower} will now follow ${projname} created by ${creator}`)
+
+    pool.then(client => {
+        const insertFollowQuery = 'INSERT INTO follows (follower, creator, orgname, teamname, projname) VALUES ($1, $2, $3, $4, $5)'
+        return client.query(insertFollowQuery, [follower, creator, orgname, teamname, projname],
+            (err, result) => {
+                if (err) {
+                    response.status(500).json(`Insert failed with error: ${err}`)
+                } else {
+                    response.status(201).json("Insert successful.")
+                }
+            })
+    })
+}
+
 
 const fundProject = (request, response) => {
     const { amount, backer, creator, orgname, teamname, projname } = request.body;
     console.log(request.body);
-    
+
     console.log(`${backer} is funding project: ${projname}`);
 
     simplePool.connect((err, client, done) => {
@@ -297,6 +394,25 @@ const login = (request, res) => {
     // })
 }
 
+const setProjectStatus = (request, response) => {
+    const { username, orgname, teamname, projname, status } = request.body;
+    console.log(`Setting status of ${projname} to ${status}`);
+
+    pool.then(client => {
+        let updateStatusQuery = 'UPDATE projects SET status = $1 WHERE username = $2 AND orgname = $3 AND teamname = $4 AND projname = $5'
+        return client.query(updateStatusQuery, [status, username, orgname, teamname, projname],
+            (err, result) => {
+                if (err) {
+                    console.log(err);
+                    response.status(404).json('Project not found.')
+                } else {
+                    response.status(200).json('Project status updated.')
+                }
+            })
+    })
+
+}
+
 const signup = (request, response) => {
     const { username, name, email, password } = request.body
     console.log(`Signing up ${name} with email ID - ${email} and username ${username}`);
@@ -366,15 +482,36 @@ const startProject = (request, response) => {
 
 }
 
+const unfollowProject = (request, response) => {
+    const { follower, creator, orgname, teamname, projname } = request.params;
+    console.log(`${follower} will now unfollow ${projname} created by ${creator}`)
+
+    pool.then(client => {
+        const deleteFollowQuery = 'DELETE FROM follows WHERE follower = $1 AND creator = $2 AND orgname = $3 AND teamname = $4 AND projname = $5'
+        return client.query(deleteFollowQuery, [follower, creator, orgname, teamname, projname],
+            (err, result) => {
+                if (err) {
+                    response.status(404).json(`Not Found`)
+                } else {
+                    response.status(204).json("Delete successful.")
+                }
+            })
+    })
+}
+
 module.exports = {
     getUsers,
     signup,
     deleteUser,
     login,
     getUserByEmail,
+    getUserByUsername,
     getCategories,
     startProject,
     getProjectDetails,
     testEndpoint,
-    fundProject
+    fundProject,
+    followProject,
+    unfollowProject,
+    setProjectStatus
 }
