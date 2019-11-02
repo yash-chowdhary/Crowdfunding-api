@@ -24,8 +24,9 @@ app.get('/', (request, response) => {
     response.json({ info: 'Node.js, Express, and Postgres API' })
 })
 
+app.get('/allprojects', db.getAllProjects)
 app.get('/categories', db.getCategories)
-// app.get('/user:/:email', db.getUserByEmail)
+app.get('/getFeaturedProjects', db.getFeaturedProjects)
 app.get('/user/:username', db.getUserByUsername)
 app.get('/users', db.getUsers)
 app.get('/projects/:username/:orgName/:teamName/:projName', db.getProjectDetails)
@@ -36,6 +37,7 @@ app.post('/setStatus', db.setProjectStatus)
 app.post('/signup', db.signup)
 app.post('/start', db.startProject)
 app.post('/login', db.login)
+app.post('/withdraw', db.withdraw)
 app.delete('/follow/:follower/:creator/:orgname/:teamname/:projname', db.unfollowProject)
 app.delete('/users/:email', db.deleteUser)
 

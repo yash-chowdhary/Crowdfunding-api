@@ -229,7 +229,6 @@ const followProject = (request, response) => {
     })
 }
 
-
 const fundProject = (request, response) => {
     const { amount, backer, creator, orgname, teamname, projname } = request.body;
     console.log(request.body);
@@ -245,7 +244,6 @@ const fundProject = (request, response) => {
                         console.error('Error rolling back client', err.stack)
                     }
                     done()
-
                 })
             }
             return !!err
@@ -288,6 +286,39 @@ const fundProject = (request, response) => {
                 })
             }
         })
+    })
+}
+
+const getAllProjects = (request, response) => {
+    console.log('Getting all projects');
+
+    pool.then(client => {
+        return client.query('SELECT * FROM projects', [],
+            (err, result) => {
+                if (err) {
+                    response.status(404).json('No projects found')
+                } else {
+                    response.status(200).json(result.rows)
+                }
+            })
+    })
+
+}
+
+const getFeaturedProjects = (request, response) => {
+    console.log('Getting featured projects');
+
+    pool.then(client => {
+        return client.query('SELECT * FROM projects WHERE status = $1 ORDER BY curfunds DESC LIMIT 3', ['In Progress'],
+            (err, result) => {
+                if (err) {
+                    console.log(err);
+                    response.status(500).json(err)
+                } else {
+                    console.log(result.rows);
+                    response.status(200).json(result.rows)
+                }
+            })
     })
 }
 
@@ -499,6 +530,73 @@ const unfollowProject = (request, response) => {
     })
 }
 
+withdraw = (request, response) => {
+    const { backer, creator, orgname, teamname, projname } = request.body;
+    console.log(`${backer} attempting to withdraw funding from ${projname} created by ${creator}`)
+
+    simplePool.connect((err, client, done) => {
+        const shouldAbort = err => {
+            if (err) {
+                console.error('Error in transaction', err.stack)
+                client.query('ROLLBACK', err => {
+                    if (err) {
+                        console.error('Error rolling back client', err.stack)
+                    }
+                    done()
+                })
+            }
+            return !!err
+        }
+
+        client.query('BEGIN', err => {
+            if (shouldAbort(err)) {
+                response.status(500).json(`Error in transaction: ${err}`)
+            } else {
+                const getQuery = 'SELECT amount FROM funds where backer = $1 AND creator = $2 AND orgname = $3 AND teamname = $4 AND projname = $5'
+                client.query(getQuery, [backer, creator, orgname, teamname, projname],
+                    (err, result) => {
+                        if (shouldAbort(err)) {
+                            response.status(500).json('Error in transaction - select')
+                        } else {
+                            console.log(result.rows);
+                            const amount = result.rows[0].amount
+                            const updateQuery = 'UPDATE projects set curfunds = curfunds - $1 WHERE username = $2 AND orgname = $3 AND teamname = $4 AND projname = $5'
+                            let updateQueryValues = [amount, creator, orgname, teamname, projname]
+                            client.query(updateQuery, updateQueryValues,
+                                (err, res) => {
+                                    if (shouldAbort(err)) {
+                                        response.status(500).json('Error in transaction - update projects')
+                                    } else {
+                                        const deleteQuery = 'DELETE FROM funds WHERE backer = $1 AND creator = $2 AND orgname = $3 AND teamname = $4 AND projname = $5'
+                                        const deleteQueryValues = [backer, creator, orgname, teamname, projname]
+                                        client.query(deleteQuery, deleteQueryValues,
+                                            (err, res) => {
+                                                if (shouldAbort(err)) {
+                                                    response.status(500).json('Error in transaction - delete funds')
+                                                } else {
+                                                    client.query('COMMIT', err => {
+                                                        if (err) {
+                                                            console.error('Error committing transaction', err.stack)
+                                                            response.status(500).json('Error committing transaction')
+                                                        } else {
+                                                            response.status(200).json({
+                                                                message: 'Funding has been withdrawn',
+                                                                amount: amount
+                                                            })
+                                                        }
+                                                        done()
+                                                    })
+                                                }
+                                            })
+                                    }
+                                })
+                        }
+                    })
+            }
+        })
+    })
+}
+
 module.exports = {
     getUsers,
     signup,
@@ -513,5 +611,8 @@ module.exports = {
     fundProject,
     followProject,
     unfollowProject,
-    setProjectStatus
+    setProjectStatus,
+    getFeaturedProjects,
+    withdraw,
+    getAllProjects
 }
