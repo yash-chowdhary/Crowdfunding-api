@@ -26,11 +26,13 @@ app.get('/', (request, response) => {
 
 app.get('/allprojects', db.getAllProjects)
 app.get('/categories', db.getCategories)
+app.get('/comments/:creator/:orgname/:teamname/:projname', db.getComments)
 app.get('/getFeaturedProjects', db.getFeaturedProjects)
 app.get('/user/:username', db.getUserByUsername)
 app.get('/users', db.getUsers)
 app.get('/projects/:username/:orgName/:teamName/:projName', db.getProjectDetails)
 app.get('/test', db.testEndpoint);
+app.post('/comment', db.comment)
 app.post('/fund', db.fundProject)
 app.post('/follow', db.followProject)
 app.post('/setStatus', db.setProjectStatus)

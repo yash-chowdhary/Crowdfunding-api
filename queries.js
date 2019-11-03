@@ -43,6 +43,27 @@ const testEndpoint = (req, res) => {
     })
 }
 
+const comment = (request, response) => {
+    const { commentor, creator, orgname, teamname, projname, comment } = request.body;
+    console.log(`${commentor} is commenting on ${projname}`);
+
+    const timestamp = moment().unix();
+    console.log(timestamp);
+    pool.then(client => {
+        const insertCommentQuery = 'INSERT INTO usercomments (commentor, timestamp, comment, creator, orgname, teamname, projname) VALUES ($1, $2, $3, $4, $5, $6, $7)'
+        const insertCommentValues = [commentor, timestamp, comment, creator, orgname, teamname, projname]
+        return client.query(insertCommentQuery, insertCommentValues,
+            (err, result) => {
+                if (err) {
+                    response.status(500).json('Error creating a comment')
+                } else {
+                    response.status(200).json('Comment added.')
+                }
+            })
+    })
+
+}
+
 const deleteUser = (request, response) => {
     const email = (request.params.email)
     console.log(email);
@@ -71,6 +92,26 @@ const getCategories = (request, response) => {
             }
         })
     })
+}
+
+const getComments = (request, response) => {
+    const { creator, orgname, teamname, projname } = request.params
+    console.log(`getting comments for ${projname}`);
+
+    pool.then(client => {
+        const getCommentsQuery = 'SELECT commentor, timestamp, comment FROM usercomments WHERE creator = $1 AND orgname = $2 AND teamname = $3 AND projname = $4 ORDER BY timestamp DESC'
+        const getCommentsValues = [creator, orgname, teamname, projname]
+        return client.query(getCommentsQuery, getCommentsValues,
+            (err, result) => {
+                if (err) {
+                    response.status(400).json('Not Found')
+                } else {
+                    console.log(result.rows);
+                    response.status(200).json(result.rows)
+                }
+            })
+    })
+
 }
 
 const getProjectDetails = (request, response) => {
@@ -614,5 +655,7 @@ module.exports = {
     setProjectStatus,
     getFeaturedProjects,
     withdraw,
-    getAllProjects
+    getAllProjects,
+    comment,
+    getComments
 }
