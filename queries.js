@@ -64,20 +64,80 @@ const comment = (request, response) => {
 
 }
 
-const deleteUser = (request, response) => {
-    const email = (request.params.email)
-    console.log(email);
+const deleteComment = (request, response) => {
+    const { commentor, timestamp } = request.params;
+    console.log(`Deleting ${commentor}'s comment at ${timestamp}`);
+
     pool.then(client => {
-        return client.query('DELETE FROM users WHERE email = $1', [email], (error, results) => {
+        const deleteCommentQuery = 'DELETE FROM usercomments WHERE commentor = $1 AND timestamp = $2'
+        const deleteCommentValues = [commentor, timestamp]
+        return client.query(deleteCommentQuery, deleteCommentValues,
+            (err, result) => {
+                if (err) {
+                    console.log(err);
+                    response.status(500).json('Error deleting comment')
+                } else {
+                    console.log(result);
+                    response.status(200).json('Comment deleted')
+                }
+            })
+    })
+
+}
+
+const deleteProject = (request, response) => {
+    const { username, orgname, teamname, projname } = request.params
+    console.log(`Deleting project - ${username}/${orgname}/${teamname}/${projname}`);
+
+    pool.then(client => {
+        const deleteProjectQuery = 'DELETE FROM projects where username = $1 AND orgname = $2 AND teamname = $3 AND projname = $4'
+        const deleteProjectQueryValues = [username, orgname, teamname, projname]
+        return client.query(deleteProjectQuery, deleteProjectQueryValues,
+            (err, result) => {
+                if (err) {
+                    response.status(500).json('Error deleting project')
+                } else {
+                    response.status(200).json('Project deleted.')
+                }
+            })
+    })
+
+}
+
+const deleteUser = (request, response) => {
+    const username = (request.params.username)
+    console.log(username);
+    pool.then(client => {
+        return client.query('DELETE FROM users WHERE email = $1', [username], (error, results) => {
             if (error) {
                 console.log(error)
                 response.status(500).json(error)
             } else {
                 console.log(results);
-                response.status(200).send(`User deleted with email: ${email}`)
+                response.status(200).send(`User deleted with username: ${username}`)
             }
         })
     })
+}
+
+const editProject = (request, response) => {
+    const { username, orgname, teamname, projname, about } = request.body
+    console.log(`Setting ${projname}'s about field to "${about}"`);
+
+    pool.then(client => {
+        const editProjQuery = 'UPDATE projects SET about = $1 WHERE username = $2 AND orgname = $3 AND teamname = $4 AND projname = $5'
+        const editProjValues = [about, username, orgname, teamname, projname]
+        return client.query(editProjQuery, editProjValues,
+            (err, result) => {
+                if (err) {
+                    response.status(500).json('Error updating projects table')
+                } else {
+                    console.log('Project updated');
+                    response.status(200).json('Project updated!')
+                }
+            })
+    })
+
 }
 
 const getCategories = (request, response) => {
@@ -466,6 +526,24 @@ const login = (request, res) => {
     // })
 }
 
+const searchProjects = (request, response) => {
+    const { searchString } = request.params
+    console.log(`Searching for projects that have ${searchString} in title or description`);
+
+    pool.then(client => {
+        const selectProjectQuery = 'SELECT * FROM projects WHERE LOWER(projname) LIKE LOWER($1) OR LOWER(description) LIKE LOWER($1)'
+        client.query(selectProjectQuery, [`%${searchString}%`],
+            (err, result) => {
+                if (err) {
+                    response.status(500).json('Server Error')
+                } else {
+                    response.status(200).json(result.rows)
+                }
+            })
+    })
+
+}
+
 const setProjectStatus = (request, response) => {
     const { username, orgname, teamname, projname, status } = request.body;
     console.log(`Setting status of ${projname} to ${status}`);
@@ -571,7 +649,7 @@ const unfollowProject = (request, response) => {
     })
 }
 
-withdraw = (request, response) => {
+const withdraw = (request, response) => {
     const { backer, creator, orgname, teamname, projname } = request.body;
     console.log(`${backer} attempting to withdraw funding from ${projname} created by ${creator}`)
 
@@ -657,5 +735,9 @@ module.exports = {
     withdraw,
     getAllProjects,
     comment,
-    getComments
+    getComments,
+    deleteComment,
+    searchProjects,
+    deleteProject,
+    editProject
 }
