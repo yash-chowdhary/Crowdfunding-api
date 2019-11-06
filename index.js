@@ -2,7 +2,8 @@ const express = require('express')
 const bodyParser = require('body-parser')
 const cors = require('cors');
 const app = express()
-const port = 3003
+const process = require('process');
+const port = process.env.PORT;
 const db = require('./queries')
 const auth = require('./auth');
 const path = require('path');
@@ -63,6 +64,6 @@ app.get('*', function(req, res) {
 // app.use('/images', express.static(__dirname + '/public/images'));
   
 
-app.listen(port, () => {
+app.listen(process.env.PORT, () => {
     console.log(`Server running on port ${port}.`)
 })
