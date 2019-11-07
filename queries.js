@@ -300,7 +300,31 @@ const getUserByUsername = (request, response) => {
                                                         followed.push(followedProjData)
                                                     })
                                                     data.followed = followed
-                                                    response.status(200).json(data)
+                                                    let selectBenefitsEnjoyedQuery = 'SELECT * FROM users JOIN enjoysbenefits EB ON users.username = EB.backer WHERE users.username = $1'
+                                                    let selectBenefitsEnjoyedValues = [username]
+                                                    client.query(selectBenefitsEnjoyedQuery, selectBenefitsEnjoyedValues,
+                                                        (err, result) => {
+                                                            if (err) {
+                                                                response.status(500).json("Oops, something went wrong on our side! Please try again.")
+                                                            } else {
+                                                                let benefits = []
+                                                                result.rows.forEach((benefitObj, index) => {
+                                                                    let benefitData = {
+                                                                        creator: benefitObj.creator,
+                                                                        orgname: benefitObj.orgname,
+                                                                        teamname: benefitObj.teamname,
+                                                                        projname: benefitObj.projname,
+                                                                        benefit: benefitObj.benefit,
+                                                                        amountfunded: benefitObj.amountfunded
+                                                                    }
+                                                                    benefits.push(benefitData)
+                                                                })
+                                                                data.benefits = benefits
+                                                                response.status(200).json(data)
+                                                            }
+                                                        })
+
+
                                                 }
                                             })
                                     }
@@ -369,17 +393,42 @@ const fundProject = (request, response) => {
                                 const insertFollowsQuery = 'INSERT INTO follows VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING'
                                 const insertFollowsValues = [backer, creator, orgname, teamname, projname]
                                 client.query(insertFollowsQuery, insertFollowsValues, (err, res) => {
-                                    if (shouldAbort(err)) return
+                                    if (shouldAbort(err)) {
+                                        response.status(500).json('Error in transaction - insert follows')
+                                    } else {
 
-                                    client.query('COMMIT', err => {
-                                        if (err) {
-                                            console.error('Error committing transaction', err.stack)
-                                            response.status(500).json('Error committing transaction')
-                                        } else {
-                                            response.status(201).json('Funds have been added!')
-                                        }
-                                        done()
-                                    })
+                                        const selectAmtQuery = 'SELECT amount from funds where backer = $5 and creator = $1 and orgname = $2 and teamname = $3 and projname = $4'
+                                        const selectAmtValues = [creator, orgname, teamname, projname, backer]
+                                        client.query(selectAmtQuery, selectAmtValues,
+                                            (err, result) => {
+                                                let updatedAmount = result.rows[0].amount
+                                                if (shouldAbort(err)) {
+                                                    response.status(500).json('Error in transaction - select amount from funds')
+                                                } else {
+                                                    const insertBenefitQuery = 'INSERT INTO enjoysbenefits (backer, creator, orgname, teamname, projname, benefit, amountfunded) (SELECT $5 as backer, b.creator, b.orgname, b.teamname, b.projname, b.benefit, $6 as amountfunded FROM benefits b WHERE b.creator = $1 AND b.orgname = $2 AND b.teamname = $3 AND b.projname = $4) ON CONFLICT (backer, creator, orgname, teamname, projname, benefit) DO UPDATE SET amountfunded = $6;'
+                                                    const insertBenefitValues = [creator, orgname, teamname, projname, backer, updatedAmount]
+                                                    client.query(insertBenefitQuery, insertBenefitValues,
+                                                        (err, result) => {
+                                                            if (shouldAbort(err)) {
+                                                                response.status(500).json('Error in transaction - insert enjoysbenefits')
+                                                            } else {
+                                                                client.query('COMMIT', err => {
+                                                                    if (err) {
+                                                                        console.error('Error committing transaction', err.stack)
+                                                                        response.status(500).json('Error committing transaction')
+                                                                    } else {
+                                                                        console.log('funding complete!');
+                                                                        response.status(201).json('Funds have been added!')
+                                                                    }
+                                                                    done()
+                                                                })
+                                                            }
+                                                        })
+                                                }
+                                            })
+
+
+                                    }
                                 })
                             }
                         })
@@ -406,11 +455,30 @@ const getAllProjects = (request, response) => {
 
 }
 
+const getBenefits = (request, response) => {
+    const { creator, orgname, teamname, projname } = request.params
+    console.log(`getting benefits for ${projname}`);
+
+    pool.then(client => {
+        const getBenefitsQuery = 'SELECT minamount, benefit FROM benefits WHERE creator = $1 AND orgname = $2 AND teamname = $3 AND projname = $4 ORDER BY minamount ASC'
+        const getBenefitsValues = [creator, orgname, teamname, projname]
+        return client.query(getBenefitsQuery, getBenefitsValues,
+            (err, result) => {
+                if (err) {
+                    response.status(400).json('Not Found')
+                } else {
+                    console.log(result.rows);
+                    response.status(200).json(result.rows)
+                }
+            })
+    })
+}
+
 const getFeaturedProjects = (request, response) => {
     console.log('Getting featured projects');
 
     pool.then(client => {
-        return client.query('SELECT * FROM projects WHERE status = $1 ORDER BY curfunds DESC LIMIT 3', ['In Progress'],
+        return client.query('SELECT * FROM projects WHERE status = $1 ORDER BY curfunds DESC LIMIT 5', ['In Progress'],
             (err, result) => {
                 if (err) {
                     console.log(err);
@@ -594,43 +662,111 @@ const signup = (request, response) => {
 }
 
 const startProject = (request, response) => {
-    const { team, title, description, goal, deadline, category, orgName, username } = request.body;
+    const { team, title, description, goal, deadline, category, orgName, username, minamount, benefit, about } = request.body;
     console.log(request.body);
 
-    // insert into teams table
-    pool.then(client => {
-        return client.query('INSERT INTO teams (username, teamName, orgName) values ($1, $2, $3) ON CONFLICT DO NOTHING',
-            [username, team, orgName], (error, result) => {
-                if (error) {
-                    console.log(error);
-                    response.status(500).json(error)
-                } else {
-                    let selectTupleStatement = 'SELECT * FROM projects WHERE username = $1 AND teamName = $2 AND orgName = $3 AND projName = $4';
-                    client.query(selectTupleStatement, [username, team, orgName, title], (error, result) => {
-                        if (error) {
-                            console.log(error);
-                            response.status(500).json(error);
-                        } else if (result.rows.length > 0) {
-                            response.status(400).json("You\'ve already created a project with this name")
+    simplePool.connect((err, client, done) => {
+        const shouldAbort = err => {
+            if (err) {
+                console.error('Error in transaction', err.stack)
+                client.query('ROLLBACK', err => {
+                    if (err) {
+                        console.error('Error rolling back client', err.stack)
+                    }
+                    done()
+                })
+            }
+            return !!err
+        }
+
+        client.query('BEGIN', err => {
+            if (shouldAbort(err)) {
+                response.status(500).json(`Error in transaction: ${err}`)
+            } else {
+                client.query('INSERT INTO teams (username, teamName, orgName) values ($1, $2, $3) ON CONFLICT DO NOTHING', [username, team, orgName],
+                    (err, result) => {
+                        if (shouldAbort(err)) {
+                            response.status(500).json('Error in transaction - insert team')
                         } else {
-                            let insertStatement = 'INSERT INTO projects (username,teamname, orgname, projname, description,categories, deadline, goal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)'
-                            client.query(insertStatement, [username, team, orgName, title, description, category, deadline, goal],
+                            let selectTupleStatement = 'SELECT * FROM projects WHERE username = $1 AND teamName = $2 AND orgName = $3 AND projName = $4';
+                            client.query(selectTupleStatement, [username, team, orgName, title],
                                 (error, result) => {
-                                    if (error) {
-                                        console.log(error);
-                                        response.status(500).json("Oops, something went wrong. Please try again!s")
+                                    if (shouldAbort(error)) {
+                                        response.status(500).json('Error in transaction - select from projects')
+                                    } else if (result.rows.length > 0) {
+                                        response.status(400).json("You\'ve already created a project with this name")
                                     } else {
-                                        console.log("Project added");
-                                        response.status(201).json("Project added")
+                                        let insertStatement = 'INSERT INTO projects (username,teamname, orgname, projname, description,categories, deadline, goal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)'
+                                        let insertStatementValues = [username, team, orgName, title, description, category, deadline, goal]
+                                        if (about !== '') {
+                                            insertStatement = 'INSERT INTO projects (username,teamname, orgname, projname, description,categories, deadline, goal, about) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)'
+                                            [username, team, orgName, title, description, category, deadline, goal, about]
+                                        }
+                                        client.query(insertStatement, insertStatementValues,
+                                            (error, result) => {
+                                                if (shouldAbort(error)) {
+                                                    response.status(500).json('Error in transaction - insert project')
+                                                } else {
+                                                    let insertBenefitStatement = 'INSERT INTO benefits (creator, teamname, orgname, projname, minamount, benefit) VALUES ($1,$2,$3,$4,$5,$6)'
+                                                    client.query(insertBenefitStatement, [username, team, orgName, title, minamount, benefit],
+                                                        (error, result) => {
+                                                            if (shouldAbort(error)) {
+                                                                response.status(500).json('Error in transaction - insert benefit')
+                                                            } else {
+                                                                client.query('COMMIT', err => {
+                                                                    if (err) {
+                                                                        console.error('Error committing transaction', err.stack)
+                                                                        response.status(500).json('Error committing transaction')
+                                                                    } else {
+                                                                        response.status(200).json("Project added.")
+                                                                    }
+                                                                })
+                                                            }
+                                                        })
+                                                }
+                                            })
                                     }
                                 })
                         }
                     })
-                }
-            })
+            }
+        })
     })
-
 }
+
+// insert into teams table
+// pool.then(client => {
+//         return client.query('INSERT INTO teams (username, teamName, orgName) values ($1, $2, $3) ON CONFLICT DO NOTHING',
+//             [username, team, orgName], (error, result) => {
+//                 if (error) {
+//                     console.log(error);
+//                     response.status(500).json(error)
+//                 } else {
+//                     let selectTupleStatement = 'SELECT * FROM projects WHERE username = $1 AND teamName = $2 AND orgName = $3 AND projName = $4';
+//                     client.query(selectTupleStatement, [username, team, orgName, title], (error, result) => {
+//                         if (error) {
+//                             console.log(error);
+//                             response.status(500).json(error);
+//                         } else if (result.rows.length > 0) {
+//                             response.status(400).json("You\'ve already created a project with this name")
+//                         } else {
+//                             let insertStatement = 'INSERT INTO projects (username,teamname, orgname, projname, description,categories, deadline, goal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)'
+//                             client.query(insertStatement, [username, team, orgName, title, description, category, deadline, goal],
+//                                 (error, result) => {
+//                                     if (error) {
+//                                         console.log(error);
+//                                         response.status(500).json("Oops, something went wrong. Please try again!s")
+//                                     } else {
+//                                         console.log("Project added");
+//                                         response.status(201).json("Project added")
+//                                     }
+//                                 })
+//                         }
+//                     })
+//                 }
+//             })
+//     })
+
 
 const unfollowProject = (request, response) => {
     const { follower, creator, orgname, teamname, projname } = request.params;
@@ -693,18 +829,29 @@ const withdraw = (request, response) => {
                                                 if (shouldAbort(err)) {
                                                     response.status(500).json('Error in transaction - delete funds')
                                                 } else {
-                                                    client.query('COMMIT', err => {
-                                                        if (err) {
-                                                            console.error('Error committing transaction', err.stack)
-                                                            response.status(500).json('Error committing transaction')
-                                                        } else {
-                                                            response.status(200).json({
-                                                                message: 'Funding has been withdrawn',
-                                                                amount: amount
-                                                            })
-                                                        }
-                                                        done()
-                                                    })
+                                                    const deleteEnjoysBenefitQuery = 'DELETE FROM enjoysbenefits WHERE backer = $1 and creator = $2 and orgname = $3 and teamname = $4 and projname = $5'
+                                                    const deleteEnjoysBenefitValues = [backer, creator, orgname, teamname, projname]
+
+                                                    client.query(deleteEnjoysBenefitQuery, deleteEnjoysBenefitValues,
+                                                        (err, result) => {
+                                                            if (shouldAbort(err)) {
+                                                                response.status(500).json('Error in transaction - delete enjoysbenefits')
+                                                            } else {
+                                                                client.query('COMMIT', err => {
+                                                                    if (err) {
+                                                                        console.error('Error committing transaction', err.stack)
+                                                                        response.status(500).json('Error committing transaction')
+                                                                    } else {
+                                                                        response.status(200).json({
+                                                                            message: 'Funding has been withdrawn',
+                                                                            amount: amount
+                                                                        })
+                                                                    }
+                                                                    done()
+                                                                })
+
+                                                            }
+                                                        })
                                                 }
                                             })
                                     }
@@ -739,5 +886,6 @@ module.exports = {
     deleteComment,
     searchProjects,
     deleteProject,
-    editProject
+    editProject,
+    getBenefits
 }

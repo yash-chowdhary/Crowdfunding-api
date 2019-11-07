@@ -29,6 +29,7 @@ app.use(
 // })
 
 app.get('/api/v1/allprojects', db.getAllProjects)
+app.get('/api/v1/benefits/:creator/:orgname/:teamname/:projname', db.getBenefits)
 app.get('/api/v1/categories', db.getCategories)
 app.get('/api/v1/comments/:creator/:orgname/:teamname/:projname', db.getComments)
 app.get('/api/v1/getFeaturedProjects', db.getFeaturedProjects)
